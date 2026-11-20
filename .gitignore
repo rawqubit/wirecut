@@ -1,0 +1,9 @@
+# Compiled binaries
+wirecut
+*.exe
+*.test
+*.out
+
+# Session and local CA artifacts
+*.jsonl
+.wirecut/

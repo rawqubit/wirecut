@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHUlEQVR4nGP8ulTlPwMFgIkSzaMGjBowasBgMgAAXt4C3eVwdLUAAAAASUVORK5CYII=">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wirecut — HTTP/HTTPS Inspector</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-alt: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .brand { font-family: var(--mono); font-weight: 700; font-size: 15px; letter-spacing: 0.4px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.err { background: var(--red); }
+  .status-label { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 260px; }
+  input[type="text"], select, textarea {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-family: var(--mono); font-size: 12px;
+  }
+  input[type="text"]:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  #filter { flex: 1; min-width: 180px; }
+
+  label.chk { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+  button, a.btn {
+    background: var(--panel-alt); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 11px; font-size: 12px; font-weight: 500;
+    cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  button:hover, a.btn:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #388bfd; color: #fff; }
+  button.primary:hover { background: #388bfd; color: #fff; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .count { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  main { display: grid; grid-template-columns: 1.05fr 1fr; flex: 1; min-height: 0; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; grid-template-rows: 45% 55%; } }
+
+  .list-pane { border-right: 1px solid var(--border); overflow: auto; background: var(--bg); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead th {
+    position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--border);
+    text-align: left; padding: 7px 10px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--muted); font-weight: 600; z-index: 1;
+  }
+  tbody tr { border-bottom: 1px solid #21262d; cursor: pointer; }
+  tbody tr:hover { background: #161b22; }
+  tbody tr.selected { background: #1c2d42; }
+  td { padding: 7px 10px; font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px;
+    font-family: var(--mono); font-weight: 600; border: 1px solid transparent;
+  }
+  .m-GET { color: var(--accent); background: rgba(88,166,255,0.12); }
+  .m-POST { color: var(--green); background: rgba(63,185,80,0.12); }
+  .m-PUT, .m-PATCH { color: var(--amber); background: rgba(210,153,34,0.12); }
+  .m-DELETE { color: var(--red); background: rgba(248,81,73,0.12); }
+  .m-OTHER { color: var(--purple); background: rgba(188,140,255,0.12); }
+
+  .s-2xx { color: var(--green); }
+  .s-3xx { color: var(--accent); }
+  .s-4xx { color: var(--amber); }
+  .s-5xx { color: var(--red); }
+  .tag-blocked { color: var(--red); border-color: rgba(248,81,73,0.4); background: rgba(248,81,73,0.1); }
+  .tag-tls { color: var(--green); border-color: rgba(63,185,80,0.3); }
+  .tag-http { color: var(--muted); border-color: var(--border); }
+  .tag-rule { color: var(--purple); border-color: rgba(188,140,255,0.35); }
+
+  .detail-pane { display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); padding: 24px; text-align: center; gap: 8px;
+  }
+  .detail-header { padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--panel-alt); }
+  .detail-url { font-family: var(--mono); font-size: 13px; word-break: break-all; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px; }
+  .detail-meta { display: flex; flex-wrap: wrap; gap: 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .tabs { display: flex; gap: 2px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 8px 12px; font-size: 12px; font-weight: 500; color: var(--muted);
+    background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; cursor: pointer;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-body { flex: 1; overflow: auto; padding: 14px; }
+  .section { margin-bottom: 16px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+  .badge { font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+  .badge.warn { color: var(--amber); border-color: rgba(210,153,34,0.45); }
+
+  pre {
+    margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; font-family: var(--mono); font-size: 12px; line-height: 1.45;
+    overflow: auto; max-height: 340px; white-space: pre-wrap; word-break: break-word;
+  }
+  .hdr-table { width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg); }
+  .hdr-row { display: grid; grid-template-columns: 180px 1fr; border-bottom: 1px solid #21262d; font-family: var(--mono); font-size: 12px; }
+  .hdr-row:last-child { border-bottom: none; }
+  .hdr-k { padding: 6px 10px; color: var(--accent); border-right: 1px solid #21262d; word-break: break-word; }
+  .hdr-v { padding: 6px 10px; color: var(--text); word-break: break-all; }
+  .hdr-v.redacted { color: var(--amber); font-weight: 600; }
+
+  .replay-form { display: flex; flex-direction: column; gap: 10px; }
+  .replay-row { display: flex; gap: 8px; }
+  .replay-row select { width: 100px; }
+  .replay-row input { flex: 1; }
+  .replay-form textarea { width: 100%; min-height: 110px; resize: vertical; line-height: 1.4; }
+  .replay-actions { display: flex; align-items: center; gap: 10px; }
+  .replay-status { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .replay-status.err { color: var(--red); }
+  .replay-status.ok { color: var(--green); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span id="connDot" class="dot"></span>
+    <span>wirecut</span>
+    <span id="connLabel" class="status-label">connecting</span>
+  </div>
+  <div class="toolbar">
+    <input id="filter" type="text" placeholder="Filter by host, path, method, status, rule...">
+    <select id="methodFilter">
+      <option value="">All Methods</option>
+      <option>GET</option>
+      <option>POST</option>
+      <option>PUT</option>
+      <option>PATCH</option>
+      <option>DELETE</option>
+      <option>HEAD</option>
+      <option>OPTIONS</option>
+    </select>
+    <label class="chk"><input id="blockedOnly" type="checkbox"> Blocked</label>
+    <a class="btn" href="/api/ca.pem" download="wirecut-ca.pem">CA Cert</a>
+    <button id="clearBtn" type="button">Clear</button>
+    <span id="countLabel" class="count">0 / 0</span>
+  </div>
+</header>
+
+<main>
+  <section class="list-pane">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:74px">Method</th>
+          <th style="width:62px">Status</th>
+          <th style="width:170px">Host</th>
+          <th>Path</th>
+          <th style="width:74px">Time</th>
+          <th style="width:72px">Size</th>
+          <th style="width:92px">Flags</th>
+        </tr>
+      </thead>
+      <tbody id="reqRows"></tbody>
+    </table>
+  </section>
+
+  <section class="detail-pane" id="detailPane">
+    <div class="empty-state">
+      <div style="font-size:14px;color:var(--text);font-weight:600;">Select a captured exchange</div>
+      <div>Live HTTP and MITM HTTPS traffic streams here via Server-Sent Events.</div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  const state = {
+    exchanges: [],
+    selectedId: null,
+    activeTab: "bodies",
+    replayEnabled: false,
+    proxyAddr: "",
+    lastReplay: null
+  };
+
+  const els = {
+    connDot: document.getElementById("connDot"),
+    connLabel: document.getElementById("connLabel"),
+    filter: document.getElementById("filter"),
+    methodFilter: document.getElementById("methodFilter"),
+    blockedOnly: document.getElementById("blockedOnly"),
+    clearBtn: document.getElementById("clearBtn"),
+    countLabel: document.getElementById("countLabel"),
+    reqRows: document.getElementById("reqRows"),
+    detailPane: document.getElementById("detailPane")
+  };
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function methodClass(m) {
+    const up = (m || "").toUpperCase();
+    if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(up)) return "m-" + up;
+    return "m-OTHER";
+  }
+
+  function statusClass(code) {
+    if (code >= 500) return "s-5xx";
+    if (code >= 400) return "s-4xx";
+    if (code >= 300) return "s-3xx";
+    return "s-2xx";
+  }
+
+  function fmtBytes(n) {
+    if (!n) return "0 B";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(2) + " MB";
+  }
+
+  function tryPrettyJSON(text, encoding) {
+    if (!text) return { text: "", kind: "empty" };
+    if (encoding === "base64") return { text: "[binary base64]\n" + text, kind: "base64" };
+    const trimmed = text.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return { text: JSON.stringify(JSON.parse(trimmed), null, 2), kind: "json" };
+      } catch (_) {}
+    }
+    return { text: text, kind: "text" };
+  }
+
+  function matchesFilter(ex) {
+    const mf = els.methodFilter.value;
+    if (mf && (ex.method || "").toUpperCase() !== mf) return false;
+    if (els.blockedOnly.checked && !ex.blocked) return false;
+    const q = els.filter.value.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      ex.id, ex.scheme, ex.method, ex.url, ex.host, ex.path,
+      String(ex.status_code || ""), ex.status,
+      (ex.rule_matches || []).join(" ")
+    ].join(" ").toLowerCase();
+    return q.split(/\s+/).every(tok => hay.includes(tok));
+  }
+
+  function renderList() {
+    const filtered = state.exchanges.filter(matchesFilter);
+    els.countLabel.textContent = filtered.length + " / " + state.exchanges.length;
+    const html = filtered.map(ex => {
+      const sel = ex.id === state.selectedId ? "selected" : "";
+      const flags = [];
+      flags.push(ex.scheme === "https"
+        ? '<span class="pill tag-tls">TLS</span>'
+        : '<span class="pill tag-http">HTTP</span>');
+      if (ex.blocked) flags.push('<span class="pill tag-blocked">BLK</span>');
+      else if (ex.rule_matches && ex.rule_matches.length) flags.push('<span class="pill tag-rule">RULE</span>');
+      const dur = typeof ex.duration_ms === "number" ? ex.duration_ms.toFixed(1) + "ms" : "-";
+      return `<tr class="${sel}" data-id="${esc(ex.id)}">
+        <td><span class="pill ${methodClass(ex.method)}">${esc(ex.method)}</span></td>
+        <td class="${statusClass(ex.status_code)}">${esc(ex.status_code || "-")}</td>
+        <td title="${esc(ex.host)}">${esc(ex.host)}</td>
+        <td title="${esc(ex.url)}">${esc(ex.path || "/")}</td>
+        <td>${esc(dur)}</td>
+        <td>${esc(fmtBytes(ex.response_size))}</td>
+        <td>${flags.join(" ")}</td>
+      </tr>`;
+    }).join("");
+    els.reqRows.innerHTML = html;
+  }
+
+  function renderHeadersTable(hdrs) {
+    const keys = Object.keys(hdrs || {}).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    if (!keys.length) return '<div style="color:var(--muted);font-family:var(--mono);font-size:12px;">(none)</div>';
+    return '<div class="hdr-table">' + keys.map(k => {
+      const vals = Array.isArray(hdrs[k]) ? hdrs[k] : [String(hdrs[k])];
+      return vals.map(v => {
+        const cls = v === "[REDACTED]" ? "hdr-v redacted" : "hdr-v";
+        return `<div class="hdr-row"><div class="hdr-k">${esc(k)}</div><div class="${cls}">${esc(v)}</div></div>`;
+      }).join("");
+    }).join("") + '</div>';
+  }
+
+  function headersToLines(hdrs) {
+    const lines = [];
+    const keys = Object.keys(hdrs || {}).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    for (const k of keys) {
+      const vals = Array.isArray(hdrs[k]) ? hdrs[k] : [String(hdrs[k])];
+      for (const v of vals) lines.push(k + ": " + v);
+    }
+    return lines.join("\n");
+  }
+
+  function linesToHeaders(text) {
+    const out = {};
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const idx = line.indexOf(":");
+      if (idx <= 0) continue;
+      const k = line.slice(0, idx).trim();
+      const v = line.slice(idx + 1).trim();
+      if (!out[k]) out[k] = [];
+      out[k].push(v);
+    }
+    return out;
+  }
+
+  function renderDetail() {
+    const ex = state.exchanges.find(x => x.id === state.selectedId);
+    if (!ex) {
+      els.detailPane.innerHTML = `<div class="empty-state">
+        <div style="font-size:14px;color:var(--text);font-weight:600;">Select a captured exchange</div>
+        <div>Live HTTP and MITM HTTPS traffic streams here via Server-Sent Events.</div>
+      </div>`;
+      return;
+    }
+
+    const reqPretty = tryPrettyJSON(ex.request_body, ex.request_body_encoding);
+    const respPretty = tryPrettyJSON(ex.response_body, ex.response_body_encoding);
+    const rulesText = (ex.rule_matches && ex.rule_matches.length) ? ex.rule_matches.join(", ") : "none";
+
+    let bodyHTML = "";
+    if (state.activeTab === "bodies") {
+      bodyHTML = `
+        <div class="section">
+          <div class="section-head">
+            <span class="section-title">Request Body</span>
+            <span>
+              <span class="badge">${esc(fmtBytes(ex.request_size))}</span>
+              ${reqPretty.kind === "json" ? '<span class="badge">Pretty JSON</span>' : ''}
+              ${ex.request_truncated ? '<span class="badge warn">Truncated</span>' : ''}
+            </span>
+          </div>
+          <pre>${reqPretty.kind === "empty" ? "(empty)" : esc(reqPretty.text)}</pre>
+        </div>
+        <div class="section">
+          <div class="section-head">
+            <span class="section-title">Response Body</span>
+            <span>
+              <span class="badge">${esc(fmtBytes(ex.response_size))}</span>
+              ${respPretty.kind === "json" ? '<span class="badge">Pretty JSON</span>' : ''}
+              ${ex.response_truncated ? '<span class="badge warn">Truncated</span>' : ''}
+            </span>
+          </div>
+          <pre>${respPretty.kind === "empty" ? "(empty)" : esc(respPretty.text)}</pre>
+        </div>`;
+    } else if (state.activeTab === "headers") {
+      bodyHTML = `
+        <div class="section">
+          <div class="section-head">
+            <span class="section-title">Request Headers</span>
+            ${ex.redacted ? '<span class="badge warn">Sensitive headers redacted</span>' : '<span class="badge">Unredacted</span>'}
+          </div>
+          ${renderHeadersTable(ex.request_headers)}
+        </div>
+        <div class="section">
+          <div class="section-head">
+            <span class="section-title">Response Headers</span>
+          </div>
+          ${renderHeadersTable(ex.response_headers)}
+        </div>`;
+    } else {
+      const replayRes = state.lastReplay && state.lastReplay.forId === ex.id ? state.lastReplay : null;
+      let replayResultHTML = "";
+      if (replayRes) {
+        if (replayRes.error) {
+          replayResultHTML = `<div class="section"><div class="replay-status err">${esc(replayRes.error)}</div></div>`;
+        } else {
+          const rPretty = tryPrettyJSON(replayRes.data.body, replayRes.data.body_encoding);
+          replayResultHTML = `
+            <div class="section">
+              <div class="section-head">
+                <span class="section-title">Replay Response</span>
+                <span class="badge">${esc(replayRes.data.status)} (${esc(replayRes.data.duration_ms.toFixed(1))} ms)</span>
+              </div>
+              <pre>${rPretty.kind === "empty" ? "(empty)" : esc(rPretty.text)}</pre>
+            </div>`;
+        }
+      }
+
+      bodyHTML = `
+        <form id="replayForm" class="replay-form">
+          <div class="replay-row">
+            <select id="rpMethod">
+              ${["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"].map(m =>
+                `<option ${m === ex.method ? "selected" : ""}>${m}</option>`).join("")}
+            </select>
+            <input id="rpURL" type="text" value="${esc(ex.url)}">
+          </div>
+          <div class="section">
+            <div class="section-head">
+              <span class="section-title">Headers (editable, one Header: Value per line)</span>
+            </div>
+            <textarea id="rpHeaders">${esc(headersToLines(ex.request_headers))}</textarea>
+          </div>
+          <div class="section">
+            <div class="section-head">
+              <span class="section-title">Body</span>
+            </div>
+            <textarea id="rpBody">${esc(ex.request_body || "")}</textarea>
+          </div>
+          <div class="replay-actions">
+            <button id="rpSubmit" class="primary" type="submit" ${state.replayEnabled ? "" : "disabled"}>
+              Replay via Proxy
+            </button>
+            <span id="rpStatus" class="replay-status">${state.replayEnabled ? "Proxy: " + esc(state.proxyAddr) : "Replay disabled (start with --proxy)"}</span>
+          </div>
+        </form>
+        ${replayResultHTML}`;
+    }
+
+    els.detailPane.innerHTML = `
+      <div class="detail-header">
+        <div class="detail-url">
+          <span class="pill ${methodClass(ex.method)}">${esc(ex.method)}</span>
+          <span class="pill ${statusClass(ex.status_code)}">${esc(ex.status || ex.status_code)}</span>
+          <span>${esc(ex.url)}</span>
+        </div>
+        <div class="detail-meta">
+          <span>ID: ${esc(ex.id)}</span>
+          <span>Time: ${esc((ex.duration_ms || 0).toFixed(2))} ms</span>
+          <span>Rules: ${esc(rulesText)}</span>
+          ${ex.blocked ? '<span class="pill tag-blocked">BLOCKED</span>' : ''}
+          ${ex.error ? '<span style="color:var(--red)">Error: ' + esc(ex.error) + '</span>' : ''}
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab ${state.activeTab === "bodies" ? "active" : ""}" data-tab="bodies">Bodies</button>
+        <button class="tab ${state.activeTab === "headers" ? "active" : ""}" data-tab="headers">Headers</button>
+        <button class="tab ${state.activeTab === "replay" ? "active" : ""}" data-tab="replay">Replay</button>
+      </div>
+      <div class="tab-body">${bodyHTML}</div>`;
+
+    els.detailPane.querySelectorAll(".tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        state.activeTab = btn.getAttribute("data-tab");
+        renderDetail();
+      });
+    });
+
+    const form = document.getElementById("replayForm");
+    if (form) {
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const btn = document.getElementById("rpSubmit");
+        const statusEl = document.getElementById("rpStatus");
+        btn.disabled = true;
+        statusEl.textContent = "Sending via proxy...";
+        statusEl.className = "replay-status";
+        try {
+          const res = await fetch("/api/replay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              method: document.getElementById("rpMethod").value,
+              url: document.getElementById("rpURL").value,
+              headers: linesToHeaders(document.getElementById("rpHeaders").value),
+              body: document.getElementById("rpBody").value,
+              body_encoding: ex.request_body_encoding === "base64" ? "base64" : "utf-8"
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            state.lastReplay = { forId: ex.id, error: data.error || ("HTTP " + res.status) };
+          } else {
+            state.lastReplay = { forId: ex.id, data: data };
+          }
+        } catch (err) {
+          state.lastReplay = { forId: ex.id, error: String(err) };
+        }
+        renderDetail();
+      });
+    }
+  }
+
+  els.reqRows.addEventListener("click", (ev) => {
+    const tr = ev.target.closest("tr[data-id]");
+    if (!tr) return;
+    state.selectedId = tr.getAttribute("data-id");
+    renderList();
+    renderDetail();
+  });
+
+  els.filter.addEventListener("input", renderList);
+  els.methodFilter.addEventListener("change", renderList);
+  els.blockedOnly.addEventListener("change", renderList);
+  els.clearBtn.addEventListener("click", async () => {
+    await fetch("/api/exchanges/clear", { method: "POST" });
+    state.exchanges = [];
+    state.selectedId = null;
+    renderList();
+    renderDetail();
+  });
+
+  async function init() {
+    const res = await fetch("/api/exchanges");
+    const data = await res.json();
+    state.exchanges = data.exchanges || [];
+    state.proxyAddr = data.proxy_addr || "";
+    state.replayEnabled = !!data.replay_enabled;
+    if (state.exchanges.length && !state.selectedId) {
+      state.selectedId = state.exchanges[0].id;
+    }
+    renderList();
+    renderDetail();
+
+    const es = new EventSource("/api/events");
+    es.onopen = () => {
+      els.connDot.className = "dot live";
+      els.connLabel.textContent = "live";
+    };
+    es.onerror = () => {
+      els.connDot.className = "dot err";
+      els.connLabel.textContent = "reconnecting";
+    };
+    es.addEventListener("exchange", (ev) => {
+      const ex = JSON.parse(ev.data);
+      if (!state.exchanges.some(x => x.id === ex.id)) {
+        state.exchanges.push(ex);
+        if (!state.selectedId) state.selectedId = ex.id;
+        renderList();
+      }
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
