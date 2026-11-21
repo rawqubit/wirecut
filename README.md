@@ -1,8 +1,21 @@
 # wirecut
 
+[![CI](https://github.com/rawqubit/wirecut/actions/workflows/ci.yml/badge.svg)](https://github.com/rawqubit/wirecut/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/rawqubit/wirecut?color=ffa53d)](https://github.com/rawqubit/wirecut/releases) [![license](https://img.shields.io/badge/license-MIT-56d3a6)](https://github.com/rawqubit/wirecut/blob/main/LICENSE)
+
 A zero-dependency, HTTP/1.1 and HTTPS-intercepting debugging proxy written in pure Go (standard library only).
 
 `wirecut` replaces Burp Suite, Charles, or Proxyman for the everyday 80% workflow: inspecting TLS API calls from CLI tools or local services, blocking or rewriting headers on the fly, saving clean JSON Lines session logs with sensitive headers redacted by default, and replaying edited requests from an embedded web UI.
+
+## Install in one line
+
+Prebuilt binaries for Linux, macOS and Windows on amd64 and arm64 — no Go toolchain needed:
+
+```bash
+curl -L https://github.com/rawqubit/wirecut/releases/download/v0.1.0/wirecut_v0.1.0_linux_amd64.tar.gz | tar -xz
+./wirecut demo
+```
+
+macOS: swap `linux_amd64` for `darwin_arm64` (or `darwin_amd64`). Windows: take the `.zip` from [releases](https://github.com/rawqubit/wirecut/releases) and run `wirecut.exe`. Every archive has a SHA-256 in `checksums.txt`. Building from source is one `go build`, and it always works — but it should not be the first thing you have to do.
 
 ## What it does
 
